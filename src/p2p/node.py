@@ -26,26 +26,24 @@ class P2PNode:
     # 🟢 START NODE
     # ------------------------------------------------------------
     async def start(self):
-        print(f"\n{'='*60}")
-        print(f"🚀 Starting P2P File Sharing Node")
-        print(f"{'='*60}")
-        print(f"Peer ID: {self.peer_id}")
-        print(f"Listening on: {self.host}:{self.port}")
-        print(f"{'='*60}\n")
+       print(f"\n{'='*60}")
+       print(f"🚀 Starting P2P File Sharing Node")
+       print(f"{'='*60}")
+       print(f"Peer ID: {self.peer_id}")
+       print(f"Listening on: {self.host}:{self.port}")
+       print(f"{'='*60}\n")
 
-        self.server = await asyncio.start_server(
-            self._handle_connection,
-            self.host,
-            self.port
-        )
+       self.server = await asyncio.start_server(
+           self._handle_connection,
+           self.host,
+           self.port
+       )
+   
+       print(f"✓ Server started on {self.host}:{self.port}")
+       print(f"✓ Shared files: {len(self.file_manager.shared_files)}")
 
-        print(f"✓ Server started on {self.host}:{self.port}")
-        print(f"✓ Shared files: {len(self.file_manager.shared_files)}")
-
-        threading.Thread(target=lambda: asyncio.run(self.run_menu()), daemon=True).start()
-
-        async with self.server:
-            await self.server.serve_forever()
+    # 🧠 Run CLI menu directly
+       await self.run_menu()
 
     # ------------------------------------------------------------
     # 🟣 CONNECTION HANDLING
