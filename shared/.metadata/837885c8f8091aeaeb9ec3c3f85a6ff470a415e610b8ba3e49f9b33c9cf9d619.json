@@ -1,0 +1,11 @@
+{
+  "file_hash": "837885c8f8091aeaeb9ec3c3f85a6ff470a415e610b8ba3e49f9b33c9cf9d619",
+  "filename": ".hello.txt.part",
+  "file_size": 7,
+  "chunk_size": 262144,
+  "total_chunks": 1,
+  "piece_hashes": [
+    "837885c8f8091aeaeb9ec3c3f85a6ff470a415e610b8ba3e49f9b33c9cf9d619"
+  ],
+  "filepath": "C:\\Users\\deepa\\OneDrive\\Desktop\\P2P-file-sharing-application\\shared\\.hello.txt.part"
+}

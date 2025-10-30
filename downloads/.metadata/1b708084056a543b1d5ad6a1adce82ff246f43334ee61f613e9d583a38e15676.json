@@ -1,0 +1,14 @@
+{
+  "file_hash": "1b708084056a543b1d5ad6a1adce82ff246f43334ee61f613e9d583a38e15676",
+  "filename": "test_file.dat",
+  "file_size": 1048576,
+  "chunk_size": 262144,
+  "total_chunks": 4,
+  "piece_hashes": [
+    "b83716ccaa2b960228ee0411da4bb068ef6404dcab5656eb75b0c8c1b9cec0c0",
+    "889732ef81736a99fdcab91c8858c235fb03c2ddf7def44021b3a40c9047ff5a",
+    "df791f538be539557ff910494c22ef4d3f0da33b2ebb73e1ed87bc6f2ca8d122",
+    "7ecbf8c7880f3d52042c9f4924b27833617a1559c91ca1e7b7c9c6ec6fe13b3a"
+  ],
+  "filepath": "C:\\Users\\deepa\\OneDrive\\Desktop\\P2P-file-sharing-application\\shared\\test_file.dat"
+}
