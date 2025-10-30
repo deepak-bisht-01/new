@@ -1,9 +1,8 @@
 import asyncio
-import json
-import threading
-from pathlib import Path
-from typing import Optional, List
-from .protocol import P2PProtocol, MessageType
+from typing import Optional
+
+# Imports moved to the top for best practice
+from .protocol import P2PProtocol, FileMetadata
 from .file_manager import FileManager
 from .peer_manager import PeerManager
 
@@ -42,10 +41,7 @@ class P2PNode:
         print(f"✓ Server started on {self.host}:{self.port}")
         print(f"✓ Shared files: {len(self.file_manager.shared_files)}")
 
-        threading.Thread(target=lambda: asyncio.run(self.run_menu()), daemon=True).start()
-
-        async with self.server:
-            await self.server.serve_forever()
+        await self.run_menu()
 
     # ------------------------------------------------------------
     # 🟣 CONNECTION HANDLING
@@ -127,18 +123,17 @@ class P2PNode:
     # 🟢 FILE SHARING
     # ------------------------------------------------------------
     def share_file(self, filepath: str):
-        metadata = self.file_manager.add_shared_file(filepath)
-        if metadata:
-            from .protocol import FileMetadata
-            metadata.pop("filepath", None)
-            file_meta = FileMetadata(**metadata)
+        metadata_dict = self.file_manager.add_shared_file(filepath)
+        if metadata_dict:
+            metadata_dict.pop("filepath", None)
+            file_meta = FileMetadata(**metadata_dict)
 
             for peer_id, protocol in self.peer_manager.peers.items():
                 protocol.announce_file(file_meta)
 
-            print(f"✓ File shared and announced: {metadata['filename']}")
-            print(f"   Hash: {metadata['file_hash']}")
-            return metadata
+            print(f"✓ File shared and announced: {metadata_dict['filename']}")
+            print(f"   Hash: {metadata_dict['file_hash']}")
+            return metadata_dict
         return None
 
     # ------------------------------------------------------------
@@ -189,9 +184,10 @@ class P2PNode:
                 await asyncio.sleep(0.5)
 
     # ------------------------------------------------------------
-    # 🟢 CLI MENU
+    # 🟢 CLI MENU (Corrected with non-blocking input)
     # ------------------------------------------------------------
     async def run_menu(self):
+        loop = asyncio.get_running_loop()
         while True:
             print(f"\n📡 P2P Node Menu ({self.peer_id})")
             print("=" * 60)
@@ -203,7 +199,10 @@ class P2PNode:
             print("6. Exit")
             print("=" * 60)
 
-            choice = input("Enter your choice (1–6): ").strip()
+            # Use run_in_executor to avoid blocking the event loop
+            prompt = "Enter your choice (1–6): "
+            choice = await loop.run_in_executor(None, input, prompt)
+            choice = choice.strip()
 
             if choice == "1":
                 self.list_shared_files()
@@ -212,13 +211,16 @@ class P2PNode:
                 self.list_available_files()
 
             elif choice == "3":
-                host = input("Enter peer host: ").strip()
-                port = int(input("Enter peer port: ").strip())
-                await self.connect_to_peer(host, port)
+                host_prompt = "Enter peer host: "
+                port_prompt = "Enter peer port: "
+                host = await loop.run_in_executor(None, input, host_prompt)
+                port_str = await loop.run_in_executor(None, input, port_prompt)
+                await self.connect_to_peer(host.strip(), int(port_str.strip()))
 
             elif choice == "4":
-                file_hash = input("Enter file hash: ").strip()
-                await self.download_file(file_hash)
+                hash_prompt = "Enter file hash: "
+                file_hash = await loop.run_in_executor(None, input, hash_prompt)
+                await self.download_file(file_hash.strip())
 
             elif choice == "5":
                 self.get_status()
@@ -227,6 +229,8 @@ class P2PNode:
                 print("Exiting node...")
                 if self.server:
                     self.server.close()
+                for task in self.download_tasks.values():
+                    task.cancel()
                 break
 
             else:
@@ -240,7 +244,6 @@ class P2PNode:
         print(f"\n{'='*60}")
         print(f"📁 Shared Files ({len(files)})")
         print(f"{'='*60}")
-
         if not files:
             print("No files shared yet.")
         else:
@@ -255,7 +258,6 @@ class P2PNode:
         print(f"\n{'='*60}")
         print(f"🌐 Available Files from Peers")
         print(f"{'='*60}")
-
         available_files = {}
         for peer_id in self.peer_manager.get_all_peers():
             file_hashes = self.peer_manager.get_peer_files(peer_id)
@@ -267,7 +269,8 @@ class P2PNode:
                             "metadata": metadata,
                             "peer_count": 0
                         }
-                available_files[file_hash]["peer_count"] += 1
+                if file_hash in available_files:
+                     available_files[file_hash]["peer_count"] += 1
 
         if not available_files:
             print("No files available from peers.")
