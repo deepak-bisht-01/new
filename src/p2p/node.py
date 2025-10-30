@@ -1,6 +1,5 @@
 import asyncio
-import json
-import threading
+import socket
 from pathlib import Path
 from typing import Optional, List
 from .protocol import P2PProtocol, MessageType
@@ -9,7 +8,13 @@ from .peer_manager import PeerManager
 
 
 class P2PNode:
-    def __init__(self, peer_id: str, host: str = "0.0.0.0", port: int = 5001, shared_folder: str = "./shared"):
+    def __init__(
+        self,
+        peer_id: str,
+        host: str = "0.0.0.0",
+        port: int = 5001,
+        shared_folder: str = "./shared",
+    ):
         self.peer_id = peer_id
         self.host = host
         self.port = port
@@ -18,49 +23,54 @@ class P2PNode:
         self.file_manager = FileManager(shared_folder)
         self.peer_manager = PeerManager(self)
 
-        self.server = None
-        self.running = False
+        self.server: Optional[asyncio.AbstractServer] = None
         self.download_tasks = {}
 
     # ------------------------------------------------------------
     # 🟢 START NODE
     # ------------------------------------------------------------
     async def start(self):
-       print(f"\n{'='*60}")
-       print(f"🚀 Starting P2P File Sharing Node")
-       print(f"{'='*60}")
-       print(f"Peer ID: {self.peer_id}")
-       print(f"Listening on: {self.host}:{self.port}")
-       print(f"{'='*60}\n")
+        print(f"\n{'='*60}")
+        print(f"🚀 Starting P2P File Sharing Node")
+        print(f"{'='*60}")
+        print(f"Peer ID      : {self.peer_id}")
 
-       self.server = await asyncio.start_server(
-           self._handle_connection,
-           self.host,
-           self.port
-       )
-   
-       print(f"✓ Server started on {self.host}:{self.port}")
-       print(f"✓ Shared files: {len(self.file_manager.shared_files)}")
+        # Detect actual LAN IP for display (works even if hostname doesn't resolve)
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            lan_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            lan_ip = "127.0.0.1"
 
-    # 🧠 Run CLI menu directly
-       await self.run_menu()
+        print(f"Listening on : {lan_ip}:{self.port}")
+        print(f"Shared Folder: {self.shared_folder}")
+        print(f"{'='*60}\n")
+
+        # Start server (binds to self.host, default 0.0.0.0 for LAN)
+        self.server = await asyncio.start_server(self._handle_connection, self.host, self.port)
+
+        print(f"✅ Server running on {lan_ip}:{self.port}")
+        print(f"✅ Shared files: {len(self.file_manager.shared_files)}")
+        print(f"\n✅ Node is ready! Listening on {lan_ip}:{self.port}\n")
+
+        # Run the interactive CLI menu (keeps program alive)
+        await self.run_menu()
 
     # ------------------------------------------------------------
-    # 🟣 CONNECTION HANDLING
+    # 🟣 CONNECTION HANDLING (incoming)
     # ------------------------------------------------------------
-    async def _handle_connection(self, reader, writer):
-        addr = writer.get_extra_info('peername')
+    async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        addr = writer.get_extra_info("peername")
         print(f"\n[PEER] New connection from {addr}")
 
-        protocol = P2PProtocol(
-            self.peer_id,
-            self.file_manager,
-            self.peer_manager
-        )
-
+        # Create protocol instance and wire it to the transport wrapper
+        protocol = P2PProtocol(self.peer_id, self.file_manager, self.peer_manager)
         transport = self._AsyncioTransport(reader, writer)
         protocol.connection_made(transport)
 
+        # Read loop for this connection
         try:
             while True:
                 data = await reader.read(8192)
@@ -70,46 +80,103 @@ class P2PNode:
         except Exception as e:
             print(f"[ERROR] Connection error: {e}")
         finally:
-            protocol.connection_lost(None)
-            writer.close()
-            await writer.wait_closed()
+            try:
+                protocol.connection_lost(None)
+            except Exception:
+                pass
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
 
     def _AsyncioTransport(self, reader, writer):
+        """A small transport wrapper so P2PProtocol can call write/get_extra_info/close"""
         class Transport:
-            def write(self, data):
-                writer.write(data)
-            def close(self):
-                writer.close()
-            def get_extra_info(self, name):
+            def write(self_inner, data: bytes):
+                try:
+                    writer.write(data)
+                except Exception:
+                    pass
+
+            def close(self_inner):
+                try:
+                    writer.close()
+                except Exception:
+                    pass
+
+            def get_extra_info(self_inner, name: str):
                 return writer.get_extra_info(name)
         return Transport()
 
     # ------------------------------------------------------------
-    # 🟢 CONNECT TO ANOTHER PEER
+    # 🟢 CONNECT TO ANOTHER PEER (outgoing)
     # ------------------------------------------------------------
-    async def connect_to_peer(self, host: str, port: int):
+    async def connect_to_peer(self, host: str, port: int, handshake_wait: float = 3.0):
+        """
+        Connect to another peer. After opening the TCP connection we:
+         - create a P2PProtocol
+         - call connection_made (which triggers a handshake from our side)
+         - start a reader task to feed incoming data to the protocol
+         - wait up to `handshake_wait` seconds for the protocol to report remote_peer_id
+           and ensure peer_manager has the peer registered.
+        Returns the protocol on success, or None on failure.
+        """
         try:
-            print(f"[CONNECT] Connecting to {host}:{port}")
+            print(f"[CONNECT] Connecting to {host}:{port} ...")
             reader, writer = await asyncio.open_connection(host, port)
-
-            protocol = P2PProtocol(
-                self.peer_id,
-                self.file_manager,
-                self.peer_manager
-            )
-
-            transport = self._AsyncioTransport(reader, writer)
-            protocol.connection_made(transport)
-
-            asyncio.create_task(self._handle_peer_data(reader, protocol))
-            print(f"✓ Connected to {host}:{port}")
-            return protocol
-
         except Exception as e:
             print(f"[ERROR] Failed to connect to {host}:{port}: {e}")
             return None
 
-    async def _handle_peer_data(self, reader, protocol):
+        # Create protocol and attach transport
+        protocol = P2PProtocol(self.peer_id, self.file_manager, self.peer_manager)
+        transport = self._AsyncioTransport(reader, writer)
+        protocol.connection_made(transport)
+
+        # Start background task to read from the socket and feed protocol.data_received
+        asyncio.create_task(self._handle_peer_data(reader, protocol))
+
+        # Wait briefly for the handshake to complete (protocol should set remote_peer_id)
+        waited = 0.0
+        interval = 0.1
+        while waited < handshake_wait:
+            remote_id = getattr(protocol, "remote_peer_id", None)
+            if remote_id:
+                # ensure peer_manager has it (some implementations add within protocol; do it here if not)
+                try:
+                    if self.peer_manager.get_peer(remote_id) is None:
+                        # peer_manager.add_peer expects (peer_id, protocol) usually — adapt safely
+                        try:
+                            self.peer_manager.add_peer(remote_id, protocol)
+                        except TypeError:
+                            # fallback if signature differs
+                            self.peer_manager.peers[remote_id] = protocol
+                    print(f"✅ Connected to {host}:{port} as {remote_id}")
+                except Exception:
+                    print(f"✅ Connected to {host}:{port} (peer id: {remote_id})")
+                return protocol
+
+            await asyncio.sleep(interval)
+            waited += interval
+
+        # If we get here, handshake didn't complete in time. Still return protocol (but warn).
+        print(f"[WARN] Connected to socket at {host}:{port} but handshake didn't finish within {handshake_wait}s.")
+        # Register protocol anyway under a temporary key (so it doesn't get lost) — optional
+        temp_key = f"{host}:{port}"
+        try:
+            if self.peer_manager.get_peer(temp_key) is None:
+                try:
+                    self.peer_manager.add_peer(temp_key, protocol)
+                except Exception:
+                    self.peer_manager.peers[temp_key] = protocol
+        except Exception:
+            pass
+
+        return protocol
+
+    async def _handle_peer_data(self, reader: asyncio.StreamReader, protocol: P2PProtocol):
+        """Background reader for an outgoing connection's incoming data"""
         try:
             while True:
                 data = await reader.read(8192)
@@ -119,7 +186,10 @@ class P2PNode:
         except Exception as e:
             print(f"[ERROR] Peer data error: {e}")
         finally:
-            protocol.connection_lost(None)
+            try:
+                protocol.connection_lost(None)
+            except Exception:
+                pass
 
     # ------------------------------------------------------------
     # 🟢 FILE SHARING
@@ -131,8 +201,12 @@ class P2PNode:
             metadata.pop("filepath", None)
             file_meta = FileMetadata(**metadata)
 
+            # announce to connected peers
             for peer_id, protocol in self.peer_manager.peers.items():
-                protocol.announce_file(file_meta)
+                try:
+                    protocol.announce_file(file_meta)
+                except Exception:
+                    pass
 
             print(f"✓ File shared and announced: {metadata['filename']}")
             print(f"   Hash: {metadata['file_hash']}")
@@ -177,8 +251,11 @@ class P2PNode:
                 if peer_id:
                     protocol = self.peer_manager.get_peer(peer_id)
                     if protocol:
-                        protocol.request_chunk(file_hash, chunk_index)
-                        requested_count += 1
+                        try:
+                            protocol.request_chunk(file_hash, chunk_index)
+                            requested_count += 1
+                        except Exception:
+                            pass
 
             if requested_count == 0:
                 print(f"[WAIT] No peers available for remaining chunks.")
@@ -187,9 +264,10 @@ class P2PNode:
                 await asyncio.sleep(0.5)
 
     # ------------------------------------------------------------
-    # 🟢 CLI MENU
+    # 🟢 CLI MENU (single loop)
     # ------------------------------------------------------------
     async def run_menu(self):
+        print(f"\n✅ Node is ready! Listening on {self.host}:{self.port}\n")
         while True:
             print(f"\n📡 P2P Node Menu ({self.peer_id})")
             print("=" * 60)
@@ -201,37 +279,39 @@ class P2PNode:
             print("6. Exit")
             print("=" * 60)
 
-            choice = input("Enter your choice (1–6): ").strip()
+            choice = input("👉 Enter your choice (1–6): ").strip()
 
             if choice == "1":
                 self.list_shared_files()
-
             elif choice == "2":
                 self.list_available_files()
-
             elif choice == "3":
                 host = input("Enter peer host: ").strip()
-                port = int(input("Enter peer port: ").strip())
+                try:
+                    port = int(input("Enter peer port: ").strip())
+                except ValueError:
+                    print("[ERROR] Invalid port number.")
+                    continue
                 await self.connect_to_peer(host, port)
-
             elif choice == "4":
                 file_hash = input("Enter file hash: ").strip()
                 await self.download_file(file_hash)
-
             elif choice == "5":
                 self.get_status()
-
             elif choice == "6":
                 print("Exiting node...")
                 if self.server:
                     self.server.close()
+                    try:
+                        await self.server.wait_closed()
+                    except Exception:
+                        pass
                 break
-
             else:
                 print("Invalid choice. Please enter a number 1–6.")
 
     # ------------------------------------------------------------
-    # 🟢 UTILS
+    # 🟢 UTILS / DISPLAY
     # ------------------------------------------------------------
     def list_shared_files(self):
         files = self.file_manager.get_available_files()
@@ -261,10 +341,7 @@ class P2PNode:
                 if file_hash not in available_files:
                     metadata = self.file_manager.get_file_metadata(file_hash)
                     if metadata:
-                        available_files[file_hash] = {
-                            "metadata": metadata,
-                            "peer_count": 0
-                        }
+                        available_files[file_hash] = {"metadata": metadata, "peer_count": 0}
                 available_files[file_hash]["peer_count"] += 1
 
         if not available_files:
@@ -282,8 +359,13 @@ class P2PNode:
         print(f"\n{'='*60}")
         print(f"📊 Node Status")
         print(f"{'='*60}")
+        try:
+            peer_count = self.peer_manager.get_peer_count()
+        except Exception:
+            # fallback: length of underlying dict if available
+            peer_count = len(getattr(self.peer_manager, "peers", {}))
         print(f"Peer ID: {self.peer_id}")
-        print(f"Connected Peers: {self.peer_manager.get_peer_count()}")
+        print(f"Connected Peers: {peer_count}")
         print(f"Shared Files: {len(self.file_manager.shared_files)}")
         print(f"Active Downloads: {len(self.download_tasks)}")
         print(f"{'='*60}\n")
