@@ -1,0 +1,11 @@
+{
+  "file_hash": "49e2d0c7245e176f8970218ef28ce8a0bc9a48605ebb6b748fc417e9c9990f6c",
+  "filename": "hi.txt",
+  "file_size": 33,
+  "chunk_size": 262144,
+  "total_chunks": 1,
+  "piece_hashes": [
+    "49e2d0c7245e176f8970218ef28ce8a0bc9a48605ebb6b748fc417e9c9990f6c"
+  ],
+  "filepath": "C:\\Users\\kanwa\\OneDrive\\Desktop\\p2p\\new\\shared1\\hi.txt"
+}

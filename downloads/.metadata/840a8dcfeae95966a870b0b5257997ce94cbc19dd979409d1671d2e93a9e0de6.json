@@ -1,0 +1,11 @@
+{
+  "file_hash": "840a8dcfeae95966a870b0b5257997ce94cbc19dd979409d1671d2e93a9e0de6",
+  "filename": "os.txt",
+  "file_size": 2,
+  "chunk_size": 262144,
+  "total_chunks": 1,
+  "piece_hashes": [
+    "840a8dcfeae95966a870b0b5257997ce94cbc19dd979409d1671d2e93a9e0de6"
+  ],
+  "filepath": "C:\\Users\\kanwa\\OneDrive\\Desktop\\p2p\\new\\shared\\os.txt"
+}

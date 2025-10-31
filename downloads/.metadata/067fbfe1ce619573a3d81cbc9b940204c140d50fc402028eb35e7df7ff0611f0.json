@@ -1,0 +1,11 @@
+{
+  "file_hash": "067fbfe1ce619573a3d81cbc9b940204c140d50fc402028eb35e7df7ff0611f0",
+  "filename": "happy.txt",
+  "file_size": 10,
+  "chunk_size": 262144,
+  "total_chunks": 1,
+  "piece_hashes": [
+    "067fbfe1ce619573a3d81cbc9b940204c140d50fc402028eb35e7df7ff0611f0"
+  ],
+  "filepath": "C:\\Users\\kanwa\\OneDrive\\Desktop\\p2p\\new\\shared1\\happy.txt"
+}
