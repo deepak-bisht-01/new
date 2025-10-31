@@ -63,4 +63,8 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except Exception as e:
+<<<<<<< HEAD
         print(f"[FATAL ERROR] {e}")
+=======
+        print(f"[FATAL ERROR] {e}")
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41

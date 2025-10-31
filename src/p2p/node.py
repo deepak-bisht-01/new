@@ -13,7 +13,11 @@ class P2PNode:
         peer_id: str,
         host: str = "0.0.0.0",
         port: int = 5001,
+<<<<<<< HEAD
         shared_folder: Optional[str] = None,
+=======
+        shared_folder: str = "./shared",
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41
     ):
         self.peer_id = peer_id
         self.host = host
@@ -44,40 +48,69 @@ class P2PNode:
         print(f"{'='*60}")
         print(f"Peer ID      : {self.peer_id}")
 
+<<<<<<< HEAD
         # Detect actual LAN IP for display
+=======
+        # Detect actual LAN IP for display (works even if hostname doesn't resolve)
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
             lan_ip = s.getsockname()[0]
+<<<<<<< HEAD
         except Exception:
             lan_ip = "127.0.0.1"
         finally:
             s.close()
+=======
+            s.close()
+        except Exception:
+            lan_ip = "127.0.0.1"
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41
 
         print(f"Listening on : {lan_ip}:{self.port}")
         print(f"Shared Folder: {self.shared_folder}")
         print(f"{'='*60}\n")
 
+<<<<<<< HEAD
         # Start the server
         self.server = await asyncio.start_server(self._handle_connection, self.host, self.port)
+=======
+        # Start server (binds to self.host, default 0.0.0.0 for LAN)
+        self.server = await asyncio.start_server(self._handle_connection, self.host, self.port)
+
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41
         print(f"✅ Server running on {lan_ip}:{self.port}")
         print(f"✅ Shared files: {len(self.file_manager.shared_files)}")
         print(f"\n✅ Node is ready! Listening on {lan_ip}:{self.port}\n")
 
+<<<<<<< HEAD
         # Keep program alive with CLI menu
         await self.run_menu()
 
     # ------------------------------------------------------------
     # 🟣 HANDLE INCOMING CONNECTIONS
+=======
+        # Run the interactive CLI menu (keeps program alive)
+        await self.run_menu()
+
+    # ------------------------------------------------------------
+    # 🟣 CONNECTION HANDLING (incoming)
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41
     # ------------------------------------------------------------
     async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         addr = writer.get_extra_info("peername")
         print(f"\n[PEER] New connection from {addr}")
 
+<<<<<<< HEAD
+=======
+        # Create protocol instance and wire it to the transport wrapper
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41
         protocol = P2PProtocol(self.peer_id, self.file_manager, self.peer_manager)
         transport = self._AsyncioTransport(reader, writer)
         protocol.connection_made(transport)
 
+        # Read loop for this connection
         try:
             while True:
                 data = await reader.read(8192)
@@ -98,7 +131,11 @@ class P2PNode:
                 pass
 
     def _AsyncioTransport(self, reader, writer):
+<<<<<<< HEAD
         """Wrapper to let P2PProtocol call write/get_extra_info/close."""
+=======
+        """A small transport wrapper so P2PProtocol can call write/get_extra_info/close"""
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41
         class Transport:
             def write(self_inner, data: bytes):
                 try:
@@ -118,10 +155,25 @@ class P2PNode:
         return Transport()
 
     # ------------------------------------------------------------
+<<<<<<< HEAD
     #  CONNECT TO ANOTHER PEER
     # ------------------------------------------------------------
     async def connect_to_peer(self, host: str, port: int, handshake_wait: float = 15.0):
         """Connects to another peer and waits for handshake."""
+=======
+    # 🟢 CONNECT TO ANOTHER PEER (outgoing)
+    # ------------------------------------------------------------
+    async def connect_to_peer(self, host: str, port: int, handshake_wait: float = 3.0):
+        """
+        Connect to another peer. After opening the TCP connection we:
+         - create a P2PProtocol
+         - call connection_made (which triggers a handshake from our side)
+         - start a reader task to feed incoming data to the protocol
+         - wait up to `handshake_wait` seconds for the protocol to report remote_peer_id
+           and ensure peer_manager has the peer registered.
+        Returns the protocol on success, or None on failure.
+        """
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41
         try:
             print(f"[CONNECT] Connecting to {host}:{port} ...")
             reader, writer = await asyncio.open_connection(host, port)
@@ -129,10 +181,15 @@ class P2PNode:
             print(f"[ERROR] Failed to connect to {host}:{port}: {e}")
             return None
 
+<<<<<<< HEAD
+=======
+        # Create protocol and attach transport
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41
         protocol = P2PProtocol(self.peer_id, self.file_manager, self.peer_manager)
         transport = self._AsyncioTransport(reader, writer)
         protocol.connection_made(transport)
 
+<<<<<<< HEAD
         asyncio.create_task(self._handle_peer_data(reader, protocol))
 
         waited = 0.0
@@ -142,11 +199,32 @@ class P2PNode:
                 try:
                     if self.peer_manager.get_peer(remote_id) is None:
                         self.peer_manager.add_peer(remote_id, protocol)
+=======
+        # Start background task to read from the socket and feed protocol.data_received
+        asyncio.create_task(self._handle_peer_data(reader, protocol))
+
+        # Wait briefly for the handshake to complete (protocol should set remote_peer_id)
+        waited = 0.0
+        interval = 0.1
+        while waited < handshake_wait:
+            remote_id = getattr(protocol, "remote_peer_id", None)
+            if remote_id:
+                # ensure peer_manager has it (some implementations add within protocol; do it here if not)
+                try:
+                    if self.peer_manager.get_peer(remote_id) is None:
+                        # peer_manager.add_peer expects (peer_id, protocol) usually — adapt safely
+                        try:
+                            self.peer_manager.add_peer(remote_id, protocol)
+                        except TypeError:
+                            # fallback if signature differs
+                            self.peer_manager.peers[remote_id] = protocol
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41
                     print(f"✅ Connected to {host}:{port} as {remote_id}")
                 except Exception:
                     print(f"✅ Connected to {host}:{port} (peer id: {remote_id})")
                 return protocol
 
+<<<<<<< HEAD
             await asyncio.sleep(0.1)
             waited += 0.1
 
@@ -161,6 +239,28 @@ class P2PNode:
 
     async def _handle_peer_data(self, reader: asyncio.StreamReader, protocol: P2PProtocol):
         """Background reader for outgoing peer connection."""
+=======
+            await asyncio.sleep(interval)
+            waited += interval
+
+        # If we get here, handshake didn't complete in time. Still return protocol (but warn).
+        print(f"[WARN] Connected to socket at {host}:{port} but handshake didn't finish within {handshake_wait}s.")
+        # Register protocol anyway under a temporary key (so it doesn't get lost) — optional
+        temp_key = f"{host}:{port}"
+        try:
+            if self.peer_manager.get_peer(temp_key) is None:
+                try:
+                    self.peer_manager.add_peer(temp_key, protocol)
+                except Exception:
+                    self.peer_manager.peers[temp_key] = protocol
+        except Exception:
+            pass
+
+        return protocol
+
+    async def _handle_peer_data(self, reader: asyncio.StreamReader, protocol: P2PProtocol):
+        """Background reader for an outgoing connection's incoming data"""
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41
         try:
             while True:
                 data = await reader.read(8192)
@@ -185,6 +285,7 @@ class P2PNode:
             metadata.pop("filepath", None)
             file_meta = FileMetadata(**metadata)
 
+            # announce to connected peers
             for peer_id, protocol in self.peer_manager.peers.items():
                 try:
                     protocol.announce_file(file_meta)
@@ -247,7 +348,7 @@ class P2PNode:
                 await asyncio.sleep(0.5)
 
     # ------------------------------------------------------------
-    # 🟢 CLI MENU
+    # 🟢 CLI MENU (single loop)
     # ------------------------------------------------------------
     async def run_menu(self):
         print(f"\n✅ Node is ready! Listening on {self.host}:{self.port}\n")
@@ -345,7 +446,12 @@ class P2PNode:
         try:
             peer_count = self.peer_manager.get_peer_count()
         except Exception:
+<<<<<<< HEAD
             peer_count = len(getattr(self.peer_manager, 'peers', {}))
+=======
+            # fallback: length of underlying dict if available
+            peer_count = len(getattr(self.peer_manager, "peers", {}))
+>>>>>>> 4cfd505efb7f490d2ceb0558cdee33d445bbeb41
         print(f"Peer ID: {self.peer_id}")
         print(f"Connected Peers: {peer_count}")
         print(f"Shared Files: {len(self.file_manager.shared_files)}")
